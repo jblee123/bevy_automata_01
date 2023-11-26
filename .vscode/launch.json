@@ -5,44 +5,24 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "lldb",
+            "name": "(Windows) Launch",
+            "type": "cppvsdbg",
             "request": "launch",
-            "name": "Debug executable 'bevy_automata_01'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=bevy_automata_01",
-                    "--package=bevy_automata_01"
-                ],
-                "filter": {
-                    "name": "bevy_automata_01",
-                    "kind": "bin"
-                },
-            },
-            "args": [],
+            "program": "${workspaceFolder}/target/debug/bevy_automata_01.exe",
             "cwd": "${workspaceFolder}",
-            "env": {
-                "PATH": "${env:RUSTUP_HOME}/toolchains/stable-x86_64-pc-windows-msvc/bin;${workspaceFolder}/target/debug/deps;${env:PATH}"
-            }
-        },
-        {
-            "type": "lldb",
-            "request": "launch",
-            "name": "Debug unit tests in executable 'bevy_automata_01'",
-            "cargo": {
-                "args": [
-                    "test",
-                    "--no-run",
-                    "--bin=bevy_automata_01",
-                    "--package=bevy_automata_01"
-                ],
-                "filter": {
-                    "name": "bevy_automata_01",
-                    "kind": "bin"
-                }
+            "osx": {
+                "name": "(OSX) Launch",
+                "type": "lldb",
+                "request": "launch",
+                "program": "${workspaceFolder}/target/debug/bevy_automata_01",
+                "cwd": "${workspaceFolder}",
             },
             "args": [],
-            "cwd": "${workspaceFolder}"
-        }
+            "stopAtEntry": false,
+            "environment": [
+                {"name": "PATH", "value": "${env:RUSTUP_HOME}/toolchains/stable-x86_64-pc-windows-msvc/bin;${workspaceFolder}/target/debug/deps;${env:PATH}"}
+            ],
+            "console": "internalConsole",
+        },
     ]
 }
