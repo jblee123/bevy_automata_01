@@ -4,3 +4,8 @@ target/
 # VisualStudioCode
 .vscode/*
 !.vscode/launch.json
+
+
+# Added by cargo
+
+/target
