@@ -22,7 +22,7 @@
             "environment": [
                 {"name": "PATH", "value": "${env:RUSTUP_HOME}/toolchains/stable-x86_64-pc-windows-msvc/bin;${workspaceFolder}/target/debug/deps;${env:PATH}"}
             ],
-            "console": "internalConsole",
+            "preLaunchTask": "cargo build"
         },
     ]
 }
