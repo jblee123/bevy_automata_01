@@ -63,6 +63,7 @@ struct SimState {
     pub last_generation_time_sec: f64,
     pub is_paused: bool,
     pub do_step: bool,
+    pub generation: usize,
 }
 
 impl SimState {
@@ -72,6 +73,7 @@ impl SimState {
             rate_hz: DEFAULT_GENERATION_RATE_HZ,
             is_paused: true,
             do_step: false,
+            generation: 0,
         }
     }
 }
@@ -93,6 +95,9 @@ impl GuiState {
 
 #[derive(Component)]
 struct MainCameraMarker;
+
+#[derive(Component)]
+struct InfoLabelMarker;
 
 fn main() {
     App::new()
@@ -118,6 +123,28 @@ fn setup(mut commands: Commands) {
 
     commands.spawn(SimState::new());
     commands.spawn(GuiState::new());
+
+    commands.spawn((
+        TextBundle::from_section(
+            "",
+            TextStyle {
+                // This font is loaded and will be used instead of the default font.
+                // font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 24.0,
+                color: Color::BLACK,
+                ..default()
+            },
+        ) // Set the alignment of the Text
+        .with_text_alignment(TextAlignment::Center)
+        // Set the style of the TextBundle itself.
+        .with_style(Style {
+            position_type: PositionType::Absolute,
+            top: Val::Px(5.0),
+            right: Val::Px(5.0),
+            ..default()
+        }),
+        InfoLabelMarker,
+    ));
 
     let mut colony = Colony::new();
     colony.cells = vec![
@@ -249,37 +276,50 @@ fn update_colony(
         run_next_generation(&mut colony);
         sim_state.last_generation_time_sec = now_sec;
         sim_state.do_step = false;
+        sim_state.generation += 1;
     }
 }
 
 fn update_display(
     mut commands: Commands,
-    entities: Query<Entity, With<Sprite>>,
+    sprites_query: Query<Entity, With<Sprite>>,
+    mut info_label_query: Query<&mut Text, With<InfoLabelMarker>>,
     colony_query: Query<&Colony>,
+    sim_state_query: Query<&SimState>,
 ) {
-    for entity in &entities {
-        commands.entity(entity).despawn();
+    for sprites in &sprites_query {
+        commands.entity(sprites).despawn();
     }
 
-    for colony in &colony_query {
-        let living_cells = colony.cells.iter().filter(|cell| cell.alive);
+    let colony = colony_query.single();
+    let living_cells = colony.cells.iter().filter(|cell| cell.alive);
+    let mut num_cells = 0;
 
-        for cell in living_cells {
-            commands.spawn(SpriteBundle {
-                sprite: Sprite {
-                    color: CELL_COLOR,
-                    custom_size: Some(Vec2::new(BASE_CELL_SIZE, BASE_CELL_SIZE)),
-                    ..default()
-                },
-                transform: Transform::from_translation(Vec3::new(
-                    BASE_CELL_SIZE * cell.coord.x as f32,
-                    BASE_CELL_SIZE * cell.coord.y as f32,
-                    0.,
-                )),
+    for cell in living_cells {
+        commands.spawn(SpriteBundle {
+            sprite: Sprite {
+                color: CELL_COLOR,
+                custom_size: Some(Vec2::new(BASE_CELL_SIZE, BASE_CELL_SIZE)),
                 ..default()
-            });
-        }
+            },
+            transform: Transform::from_translation(Vec3::new(
+                BASE_CELL_SIZE * cell.coord.x as f32,
+                BASE_CELL_SIZE * cell.coord.y as f32,
+                0.,
+            )),
+            ..default()
+        });
+
+        num_cells += 1;
     }
+
+    let sim_state = sim_state_query.single();
+    let mut info_label = info_label_query.single_mut();
+    info_label.sections[0].value = format!(
+        "Generation: {0}\nCell count: {1}",
+        sim_state.generation, num_cells
+    )
+    .into();
 }
 
 fn run_next_generation(colony: &mut Colony) {
@@ -365,18 +405,18 @@ fn run_next_generation(colony: &mut Colony) {
     while neighbor_idx2 < neighbor_coords.len() {
         // Skip elements that are the same in neighbors list.
         let neighbor_idx1 = neighbor_idx2;
-        neighbor_idx2 = neighbor_idx2 + 1;
+        neighbor_idx2 += 1;
         while neighbor_idx2 < neighbor_coords.len()
             && (neighbor_coords[neighbor_idx1] == neighbor_coords[neighbor_idx2])
         {
-            neighbor_idx2 = neighbor_idx2 + 1;
+            neighbor_idx2 += 1;
         }
 
         // Find the first element in the cells >= the current element in the neighbors
         while ((neighbor_coords[neighbor_idx1] > cells[cell_idx].coord) || !cells[cell_idx].alive)
             && ((cell_idx + 1) < cells.len())
         {
-            cell_idx = cell_idx + 1;
+            cell_idx += 1;
         }
 
         let num_neighbors = neighbor_idx2 - neighbor_idx1;
