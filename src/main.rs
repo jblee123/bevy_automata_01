@@ -1,10 +1,13 @@
+use bevy::input::mouse::*;
 use bevy::prelude::*;
+use bevy::window::PrimaryWindow;
 // use bevy::sprite::MaterialMesh2dBundle;
 
-const GENERATION_PERIOD_HZ: f64 = 8.;
-const GENERATION_PERIOD_SEC: f64 = 1. / GENERATION_PERIOD_HZ;
+const DEFAULT_GENERATION_RATE_HZ: f64 = 8.;
+const MIN_GENERATION_RATE_HZ: f64 = 1.;
+const MAX_GENERATION_RATE_HZ: f64 = 32.;
 
-const WIN_BG_COLOR: Color = Color::GRAY;
+const WIN_BG_COLOR: Color = Color::SILVER;
 const CELL_COLOR: Color = Color::BLUE;
 
 const BASE_CELL_SIZE: f32 = 20.;
@@ -56,18 +59,40 @@ impl Colony {
 
 #[derive(Component)]
 struct SimState {
-    pub is_paused: bool,
+    pub rate_hz: f64,
     pub last_generation_time_sec: f64,
+    pub is_paused: bool,
+    pub do_step: bool,
 }
 
 impl SimState {
     pub fn new() -> Self {
         Self {
-            is_paused: true,
             last_generation_time_sec: 0.,
+            rate_hz: DEFAULT_GENERATION_RATE_HZ,
+            is_paused: true,
+            do_step: false,
         }
     }
 }
+
+#[derive(Component)]
+struct GuiState {
+    pub drag_start: Vec2,
+    pub drag_offset: Vec2,
+}
+
+impl GuiState {
+    pub fn new() -> Self {
+        Self {
+            drag_start: Vec2::default(),
+            drag_offset: Vec2::default(),
+        }
+    }
+}
+
+#[derive(Component)]
+struct MainCameraMarker;
 
 fn main() {
     App::new()
@@ -81,15 +106,18 @@ fn main() {
             ..default()
         }))
         .add_systems(Startup, setup)
+        .add_systems(Update, handle_keyboard)
+        .add_systems(Update, update_camera)
         .add_systems(Update, update_colony)
         .add_systems(Update, update_display)
         .run();
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn((Camera2dBundle::default(), MainCameraMarker));
 
     commands.spawn(SimState::new());
+    commands.spawn(GuiState::new());
 
     let mut colony = Colony::new();
     colony.cells = vec![
@@ -105,39 +133,122 @@ fn setup(mut commands: Commands) {
     commands.spawn(colony);
 }
 
-fn update_colony(
-    mut colony_query: Query<&mut Colony>,
-    mut sim_state_query: Query<&mut SimState>,
-    keys: Res<Input<KeyCode>>,
-    time: Res<Time>,
-) {
-    let colony = colony_query.iter_mut().next();
-    if colony.is_none() {
-        return;
-    }
-
-    let sim_state = sim_state_query.iter_mut().next();
-    if sim_state.is_none() {
-        return;
-    }
-
-    let mut sim_state = sim_state.unwrap();
+fn handle_keyboard(keys: Res<Input<KeyCode>>, mut sim_state_query: Query<&mut SimState>) {
+    let mut sim_state = sim_state_query.iter_mut().next().unwrap();
 
     if keys.just_pressed(KeyCode::Space) {
         sim_state.is_paused = !sim_state.is_paused;
     }
 
-    let step_next = keys.just_pressed(KeyCode::N);
+    if keys.just_pressed(KeyCode::Minus) {
+        sim_state.rate_hz /= 2.;
+        if sim_state.rate_hz < MIN_GENERATION_RATE_HZ {
+            sim_state.rate_hz = MIN_GENERATION_RATE_HZ;
+        }
+    }
+    if keys.just_pressed(KeyCode::Equals) {
+        sim_state.rate_hz *= 2.;
+        if sim_state.rate_hz > MAX_GENERATION_RATE_HZ {
+            sim_state.rate_hz = MAX_GENERATION_RATE_HZ;
+        }
+    }
 
-    let next_gen_time = sim_state.last_generation_time_sec + GENERATION_PERIOD_SEC;
+    sim_state.do_step = keys.just_pressed(KeyCode::N);
+}
+
+fn update_camera(
+    mut gui_state_query: Query<&mut GuiState>,
+    mut camera_query: Query<(&mut OrthographicProjection, &mut Transform), With<MainCameraMarker>>,
+    windows_query: Query<&Window, With<PrimaryWindow>>,
+    mouse_buttons: Res<Input<MouseButton>>,
+    mut motion_evr: EventReader<MouseMotion>,
+    mut scroll_evr: EventReader<MouseWheel>,
+) {
+    let (mut projection, mut transform) = camera_query.single_mut();
+
+    let win = windows_query.single();
+    let mut gui_state = gui_state_query.single_mut();
+
+    let mouse_pos = win.cursor_position();
+    if mouse_pos.is_none() {
+        return;
+    }
+
+    let mouse_pos = mouse_pos.unwrap();
+
+    if mouse_buttons.just_pressed(MouseButton::Left) {
+        gui_state.drag_start = mouse_pos;
+        gui_state.drag_offset = Vec2::ZERO;
+    }
+
+    if mouse_buttons.pressed(MouseButton::Left) {
+        for _ in motion_evr.read() {
+            let new_offset = mouse_pos - gui_state.drag_start;
+            let delta = new_offset - gui_state.drag_offset;
+
+            transform.translation.x -= delta.x * projection.scale;
+            transform.translation.y += delta.y * projection.scale;
+            gui_state.drag_offset = new_offset;
+        }
+    }
+
+    const MAX_SCALE: f32 = 16.0; // 2^4
+    const MIN_SCALE: f32 = 0.0625; // 1/(2^4)
+
+    let start_scale = projection.scale;
+
+    for ev in scroll_evr.read() {
+        match ev.unit {
+            MouseScrollUnit::Line | MouseScrollUnit::Pixel => {
+                // Really should handle these separately...
+                if ev.y > 0. {
+                    // zoom in
+                    projection.scale /= 2.;
+                    if projection.scale < MIN_SCALE {
+                        projection.scale = MIN_SCALE;
+                    }
+                } else {
+                    // zoom out
+                    projection.scale *= 2.;
+                    if projection.scale > MAX_SCALE {
+                        projection.scale = MAX_SCALE;
+                    }
+                }
+            }
+        }
+    }
+
+    // We want the point under the mouse cursor to stay where it is, so that
+    // means moving the camera. This will shift the camera to the mouse
+    // cursor (taking the old scale into account) and then shift it back in
+    // the opposite direction a distance based on the same number of pixels
+    // but at the new scale.
+    let win_center = Vec2::new(win.width(), win.height()) * 0.5;
+    let mut pix_offset = mouse_pos - win_center;
+    pix_offset.y = -pix_offset.y; // screen coords to space coords
+    let cam_offset = pix_offset * (start_scale - projection.scale);
+    transform.translation.x += cam_offset.x;
+    transform.translation.y += cam_offset.y;
+}
+
+fn update_colony(
+    mut colony_query: Query<&mut Colony>,
+    mut sim_state_query: Query<&mut SimState>,
+    time: Res<Time>,
+) {
+    let mut colony = colony_query.iter_mut().next().unwrap();
+
+    let mut sim_state = sim_state_query.iter_mut().next().unwrap();
+
+    let update_period_sec = 1. / sim_state.rate_hz;
+    let next_gen_time = sim_state.last_generation_time_sec + update_period_sec;
     let now_sec = time.elapsed_seconds_f64();
-    let run_step = step_next || (now_sec >= next_gen_time && !sim_state.is_paused);
-
-    let mut colony = colony.unwrap();
+    let run_step = sim_state.do_step || (now_sec >= next_gen_time && !sim_state.is_paused);
 
     if run_step {
         run_next_generation(&mut colony);
         sim_state.last_generation_time_sec = now_sec;
+        sim_state.do_step = false;
     }
 }
 
