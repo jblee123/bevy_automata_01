@@ -39,7 +39,6 @@ impl Cell {
     }
 }
 
-#[derive(Component)]
 struct Colony {
     pub cells: Vec<Cell>,
     pub new_cells: Vec<Cell>,
@@ -52,6 +51,19 @@ impl Colony {
             cells: vec![],
             new_cells: vec![],
             neighbor_coords: vec![],
+        }
+    }
+}
+
+#[derive(Component)]
+struct ColonyComponent {
+    pub colony: Colony,
+}
+
+impl ColonyComponent {
+    pub fn new() -> Self {
+        Self {
+            colony: Colony::new(),
         }
     }
 }
@@ -145,8 +157,8 @@ fn setup(mut commands: Commands) {
         InfoLabelMarker,
     ));
 
-    let mut colony = Colony::new();
-    colony.cells = vec![
+    let mut colony_comp = ColonyComponent::new();
+    colony_comp.colony.cells = vec![
         Cell::new(CellCoord { x: 0, y: 0 }),
         Cell::new(CellCoord { x: 1, y: 0 }),
         Cell::new(CellCoord { x: 4, y: 0 }),
@@ -155,8 +167,8 @@ fn setup(mut commands: Commands) {
         Cell::new(CellCoord { x: 3, y: 1 }),
         Cell::new(CellCoord { x: 1, y: 2 }),
     ];
-    colony.cells.sort();
-    commands.spawn(colony);
+    colony_comp.colony.cells.sort();
+    commands.spawn(colony_comp);
 }
 
 fn handle_keyboard(keys: Res<Input<KeyCode>>, mut sim_state_query: Query<&mut SimState>) {
@@ -258,11 +270,11 @@ fn update_camera(
 }
 
 fn update_colony(
-    mut colony_query: Query<&mut Colony>,
+    mut colony_query: Query<&mut ColonyComponent>,
     mut sim_state_query: Query<&mut SimState>,
     time: Res<Time>,
 ) {
-    let mut colony = colony_query.iter_mut().next().unwrap();
+    let mut colony_comp = colony_query.iter_mut().next().unwrap();
 
     let mut sim_state = sim_state_query.iter_mut().next().unwrap();
 
@@ -272,7 +284,7 @@ fn update_colony(
     let run_step = sim_state.do_step || (now_sec >= next_gen_time && !sim_state.is_paused);
 
     if run_step {
-        run_next_generation(&mut colony);
+        run_next_generation(&mut colony_comp.colony);
         sim_state.last_generation_time_sec = now_sec;
         sim_state.do_step = false;
         sim_state.generation += 1;
@@ -283,17 +295,17 @@ fn update_display(
     mut commands: Commands,
     sprites_query: Query<Entity, With<Sprite>>,
     mut info_label_query: Query<&mut Text, With<InfoLabelMarker>>,
-    colony_query: Query<&Colony>,
+    colony_query: Query<&ColonyComponent>,
     sim_state_query: Query<&SimState>,
 ) {
     for sprites in &sprites_query {
         commands.entity(sprites).despawn();
     }
 
-    let colony = colony_query.single();
+    let colony_comp = colony_query.single();
     let mut num_cells = 0;
 
-    for cell in &colony.cells {
+    for cell in &colony_comp.colony.cells {
         commands.spawn(SpriteBundle {
             sprite: Sprite {
                 color: CELL_COLOR,
