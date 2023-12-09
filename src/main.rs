@@ -31,12 +31,11 @@ impl CellCoord {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 struct Cell {
     pub coord: CellCoord,
-    pub alive: bool,
 }
 
 impl Cell {
     pub fn new(coord: CellCoord) -> Self {
-        Self { coord, alive: true }
+        Self { coord }
     }
 }
 
@@ -292,10 +291,9 @@ fn update_display(
     }
 
     let colony = colony_query.single();
-    let living_cells = colony.cells.iter().filter(|cell| cell.alive);
     let mut num_cells = 0;
 
-    for cell in living_cells {
+    for cell in &colony.cells {
         commands.spawn(SpriteBundle {
             sprite: Sprite {
                 color: CELL_COLOR,
@@ -337,10 +335,6 @@ fn run_next_generation(colony: &mut Colony) {
     neighbor_coords.reserve(cells.len() * NEIGHBORS_PER_CELL);
 
     for cell in &cells {
-        if !cell.alive {
-            continue;
-        }
-
         let is_not_min_x = cell.coord.x != CellCoord::MIN_X;
         let is_not_max_x = cell.coord.x != CellCoord::MAX_X;
         let is_not_min_y = cell.coord.y != CellCoord::MIN_Y;
@@ -413,7 +407,7 @@ fn run_next_generation(colony: &mut Colony) {
         }
 
         // Find the first element in the cells >= the current element in the neighbors
-        while ((neighbor_coords[neighbor_idx1] > cells[cell_idx].coord) || !cells[cell_idx].alive)
+        while (neighbor_coords[neighbor_idx1] > cells[cell_idx].coord)
             && ((cell_idx + 1) < cells.len())
         {
             cell_idx += 1;
