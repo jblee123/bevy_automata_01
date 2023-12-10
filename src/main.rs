@@ -1,8 +1,17 @@
 pub mod conway;
+pub mod line_color_material;
+pub mod mesh;
 
+use bevy::core_pipeline::clear_color::ClearColorConfig;
 use bevy::input::mouse::*;
 use bevy::prelude::*;
+use bevy::render::camera::ScalingMode;
+use bevy::render::view::RenderLayers;
+use bevy::sprite::*;
 use bevy::window::PrimaryWindow;
+
+use line_color_material::*;
+use mesh::*;
 
 const DEFAULT_GENERATION_RATE_HZ: f64 = 8.;
 const MIN_GENERATION_RATE_HZ: f64 = 1.;
@@ -66,19 +75,25 @@ impl GuiState {
 struct MainCameraMarker;
 
 #[derive(Component)]
+struct DebugCameraMarker;
+
+#[derive(Component)]
 struct InfoLabelMarker;
 
 fn main() {
     App::new()
         .insert_resource(ClearColor(WIN_BG_COLOR))
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Automata 01".into(),
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    title: "Automata 01".into(),
 
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }))
+            Material2dPlugin::<LineColorMaterial>::default(),
+        ))
         .add_systems(Startup, setup)
         .add_systems(Update, handle_keyboard)
         .add_systems(Update, update_camera)
@@ -87,8 +102,38 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut line_materials: ResMut<Assets<LineColorMaterial>>,
+) {
     commands.spawn((Camera2dBundle::default(), MainCameraMarker));
+    commands.spawn((
+        Camera2dBundle {
+            camera_2d: Camera2d {
+                // no "background color", we need to see the main camera's output
+                clear_color: ClearColorConfig::None,
+                ..default()
+            },
+            camera: Camera {
+                // renders after / on top of the main camera
+                order: 100,
+                ..default()
+            },
+            projection: OrthographicProjection {
+                far: 1000.,
+                near: -1000.,
+                scaling_mode: ScalingMode::Fixed {
+                    width: 1.,
+                    height: 1.,
+                },
+                ..default()
+            },
+            ..default()
+        },
+        RenderLayers::layer(1),
+        DebugCameraMarker,
+    ));
 
     commands.spawn(SimState::new());
     commands.spawn(GuiState::new());
@@ -127,6 +172,23 @@ fn setup(mut commands: Commands) {
     ];
     colony_comp.colony.cells.sort();
     commands.spawn(colony_comp);
+
+    commands.spawn((
+        MaterialMesh2dBundle {
+            mesh: meshes
+                .add(Mesh::from(LineList {
+                    lines: vec![
+                        (Vec3::new(-0.5, -0.5, 0.0), Vec3::new(0.5, 0.5, 0.0)),
+                        (Vec3::new(-0.5, 0.5, 0.0), Vec3::new(0.5, -0.5, 0.0)),
+                    ],
+                }))
+                .into(),
+            material: line_materials.add(LineColorMaterial::from(Color::RED)),
+            transform: Transform::from_translation(Vec3::new(0., 0., 2.)),
+            ..default()
+        },
+        RenderLayers::layer(1),
+    ));
 }
 
 fn handle_keyboard(keys: Res<Input<KeyCode>>, mut sim_state_query: Query<&mut SimState>) {
